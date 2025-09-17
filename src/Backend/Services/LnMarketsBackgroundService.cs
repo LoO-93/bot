@@ -17,9 +17,12 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
         public const string JsonRpcVersion = "2.0";
         public const string SubscribeMethod = "v1/public/subscribe";
         public const string FuturesChannel = "futures:btc_usd:last-price";
+        public const string VolatilityChannel = "options:btc_usd:volatility-index";
     }
 
     private readonly Uri _serverUri = new("wss://api.lnmarkets.com");
+    private decimal _currentVolatilityIndex = 0;
+    private string _lastVolatilityRegime = "Normal";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -31,11 +34,18 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
             {
                 await webSocket.ConnectAsync(_serverUri, stoppingToken);
 
-                var payload = $"{{\"jsonrpc\":\"{Constants.JsonRpcVersion}\",\"id\":\"{Guid.NewGuid()}\",\"method\":\"{Constants.SubscribeMethod}\",\"params\":[\"{Constants.FuturesChannel}\"]}}";
-                var messageBuffer = Encoding.UTF8.GetBytes(payload);
-                var segment = new ArraySegment<byte>(messageBuffer);
+                // Subscribe to futures price channel
+                var futuresPayload = $"{{\"jsonrpc\":\"{Constants.JsonRpcVersion}\",\"id\":\"{Guid.NewGuid()}\",\"method\":\"{Constants.SubscribeMethod}\",\"params\":[\"{Constants.FuturesChannel}\"]}}";
+                var futuresBuffer = Encoding.UTF8.GetBytes(futuresPayload);
+                var futuresSegment = new ArraySegment<byte>(futuresBuffer);
+                await webSocket.SendAsync(futuresSegment, WebSocketMessageType.Text, true, stoppingToken);
 
-                await webSocket.SendAsync(segment, WebSocketMessageType.Text, true, stoppingToken);
+                // Subscribe to volatility index channel
+                var volatilityPayload = $"{{\"jsonrpc\":\"{Constants.JsonRpcVersion}\",\"id\":\"{Guid.NewGuid()}\",\"method\":\"{Constants.SubscribeMethod}\",\"params\":[\"{Constants.VolatilityChannel}\"]}}";
+                var volatilityBuffer = Encoding.UTF8.GetBytes(volatilityPayload);
+                var volatilitySegment = new ArraySegment<byte>(volatilityBuffer);
+                await webSocket.SendAsync(volatilitySegment, WebSocketMessageType.Text, true, stoppingToken);
+                
                 await ReceiveMessagesAsync(webSocket, stoppingToken);
             }
             catch (WebSocketException wsEx)
@@ -102,13 +112,18 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
 
             var messageAsString = Encoding.UTF8.GetString(buffer, 0, result.Count);
             var messageAsLastPriceDTO = ParseMessage(messageAsString);
-            if (messageAsLastPriceDTO is null)
+            if (messageAsLastPriceDTO == null)
+            {
+                _logger.LogWarning("Parsed WebSocket message is empty");
                 return null;
+            }
 
-            if (!IsMessageValid(messageAsLastPriceDTO, lastPrice, lastCall))
-                return null;
+            var messageTimeDifference = DateTime.UtcNow - (messageData.Time?.TimeStampToDateTime() ?? DateTime.MinValue);
+            if (messageTimeDifference >= TimeSpan.FromSeconds(_options.Value.MessageTimeoutSeconds))
+                return false;
 
-            var price = Math.Floor(messageAsLastPriceDTO.LastPrice / Constants.PriceRoundingFactor) * Constants.PriceRoundingFactor;
+            if ((DateTime.UtcNow - lastCall).TotalSeconds < _options.Value.MinCallIntervalSeconds)
+                return false;
 
             using var scope = _scopeFactory?.CreateScope();
             if (scope == null)
@@ -118,6 +133,11 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
             }
 
             var (options, apiService) = GetScopedServices(scope);
+            
+            var adaptiveFactor = CalculateAdaptiveFactor(options);
+            var price = Math.Floor(messageAsLastPriceDTO.LastPrice / adaptiveFactor) * adaptiveFactor;
+            if (price == lastPrice)
+                return false;
 
             var user = await apiService.GetUser(options.Key, options.Passphrase, options.Secret);
             if (user?.balance == 0)
@@ -133,22 +153,6 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
             _logger.LogError(ex, "Error processing WebSocket text message");
             return null;
         }
-    }
-
-    private bool IsMessageValid(LastPriceData messageData, decimal lastPrice, DateTime lastCall)
-    {
-        var messageTimeDifference = DateTime.UtcNow - (messageData.Time?.TimeStampToDateTime() ?? DateTime.MinValue);
-        if (messageTimeDifference >= TimeSpan.FromSeconds(_options.Value.MessageTimeoutSeconds))
-            return false;
-
-        var price = Math.Floor(messageData.LastPrice / Constants.PriceRoundingFactor) * Constants.PriceRoundingFactor;
-        if (price == lastPrice)
-            return false;
-
-        if ((DateTime.UtcNow - lastCall).TotalSeconds < _options.Value.MinCallIntervalSeconds)
-            return false;
-
-        return true;
     }
 
     private (LnMarketsOptions Options, ILnMarketsApiService ApiService) GetScopedServices(IServiceScope scope)
@@ -234,7 +238,8 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
                 return;
             }
                 
-            var tradePrice = Math.Floor(messageData.LastPrice / options.Factor) * options.Factor;
+            var adaptiveFactor = CalculateAdaptiveFactor(options);
+            var tradePrice = Math.Floor(messageData.LastPrice / adaptiveFactor) * adaptiveFactor;
             var runningTrades = await apiService.FuturesGetRunningTradesAsync(options.Key, options.Passphrase, options.Secret);
             var currentTrade = runningTrades.FirstOrDefault(x => x.price == tradePrice);
             
@@ -313,6 +318,21 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
 
     private LastPriceData? HandleJsonRpcSubscription(JsonRpcSubscription subscription)
     {
+        switch (subscription.Params.Channel)
+        {
+            case Constants.FuturesChannel:
+                return ParseLastPriceData(subscription);
+            case Constants.VolatilityChannel:
+                ParseVolatilityData(subscription);
+                return null;
+            default:
+                _logger.LogDebug("Received subscription data for unknown channel: {Channel}", subscription.Params.Channel);
+                return null;
+        }
+    }
+
+    private LastPriceData? ParseLastPriceData(JsonRpcSubscription subscription)
+    {
         try
         {
             return JsonSerializer.Deserialize<LastPriceData>(subscription.Params.Data.GetRawText());
@@ -324,8 +344,75 @@ public class LnMarketsBackgroundService(IServiceScopeFactory _scopeFactory, ILog
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error while parsing subscription data: {RawData}", subscription.Params.Data.GetRawText());
+            _logger.LogError(ex, "Unexpected error while parsing LastPriceData: {RawData}", subscription.Params.Data.GetRawText());
             return null;
         }
+    }
+
+    private void ParseVolatilityData(JsonRpcSubscription subscription)
+    {
+        try
+        {
+            // Log the entire raw volatility message
+            _logger.LogInformation("Raw Volatility Message: {RawData}", subscription.Params.Data.GetRawText());
+            
+            var volatilityData = JsonSerializer.Deserialize<VolatilityData>(subscription.Params.Data.GetRawText());
+            if (volatilityData != null)
+            {
+                // Store the current volatility index
+                _currentVolatilityIndex = volatilityData.VolatilityIndex;
+                
+                _logger.LogInformation("Volatility Index Update: Pair={Pair}, Index={VolatilityIndex}, Time={Time}", 
+                    volatilityData.Pair, volatilityData.VolatilityIndex, volatilityData.Time ?? DateTime.UtcNow.ToString());
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize VolatilityData from subscription data: {RawData}", subscription.Params.Data.GetRawText());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while parsing VolatilityData: {RawData}", subscription.Params.Data.GetRawText());
+        }
+    }
+
+    private int CalculateAdaptiveFactor(LnMarketsOptions options)
+    {
+        if (!options.EnableVolatilityAdaptiveFactor || _currentVolatilityIndex == 0)
+        {
+            return options.Factor;
+        }
+
+        int adaptiveFactor;
+        string currentRegime;
+
+        if (_currentVolatilityIndex < options.VolatilityLowThreshold)
+        {
+            // Low volatility: reduce factor for more frequent trades
+            adaptiveFactor = (int)(options.Factor * options.VolatilityLowMultiplier);
+            currentRegime = "Low";
+        }
+        else if (_currentVolatilityIndex > options.VolatilityHighThreshold)
+        {
+            // High volatility: increase factor for less frequent trades
+            adaptiveFactor = (int)(options.Factor * options.VolatilityHighMultiplier);
+            currentRegime = "High";
+        }
+        else
+        {
+            // Normal volatility: use base factor
+            adaptiveFactor = options.Factor;
+            currentRegime = "Normal";
+        }
+
+        // Log regime changes only when the regime actually changes
+        if (currentRegime != _lastVolatilityRegime)
+        {
+            _logger.LogInformation("Volatility Regime Change: {PreviousRegime} → {CurrentRegime} volatility ({VolatilityIndex}%) → Factor adjusted from {BaseFactor} to {AdaptiveFactor}", 
+                _lastVolatilityRegime, currentRegime, _currentVolatilityIndex, options.Factor, adaptiveFactor);
+            _lastVolatilityRegime = currentRegime;
+        }
+
+        return adaptiveFactor;
     }
 }

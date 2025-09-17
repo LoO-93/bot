@@ -63,4 +63,19 @@ public class LnMarketsOptions
 
     [Range(1, int.MaxValue)]
     public int DivisorForTimeCalculation { get; set; } = 1000;
+
+    // Volatility-Adaptive Factor Configuration
+    [Range(0, 100)]
+    public decimal VolatilityLowThreshold { get; set; } = 25;
+
+    [Range(0, 100)]
+    public decimal VolatilityHighThreshold { get; set; } = 45;
+
+    [Range(0.1, 2.0)]
+    public decimal VolatilityLowMultiplier { get; set; } = 0.5m;
+
+    [Range(0.1, 2.0)]
+    public decimal VolatilityHighMultiplier { get; set; } = 1.5m;
+
+    public bool EnableVolatilityAdaptiveFactor { get; set; } = false;
 }
