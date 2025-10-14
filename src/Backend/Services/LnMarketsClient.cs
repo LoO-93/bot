@@ -56,6 +56,15 @@ public class LnMarketsClient : IMarketplaceClient
         return await ExecutePostRequestAsync(key, passphrase, secret, method, path, requestBody, "SwapUsdInBtc", new object[] { "USD", "BTC", amount });
     }
 
+    public async Task<bool> SwapBtcInUsd(string key, string passphrase, string secret, int amount)
+    {
+        var method = "POST";
+        var path = "/v2/swap";
+        var requestBody = $$"""{"in_asset":"BTC","out_asset":"USD","in_amount":{{amount}}}""";
+
+        return await ExecutePostRequestAsync(key, passphrase, secret, method, path, requestBody, "SwapBtcInUsd", new object[] { "BTC", "USD", amount });
+    }
+
     public async Task<IReadOnlyList<FuturesTradeModel>> GetOpenTrades(string key, string passphrase, string secret)
     {
         var method = "GET";

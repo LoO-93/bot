@@ -1,7 +1,7 @@
 using AutoBot.Models;
 using AutoBot.Services;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 // Configure appsettings files manually to ensure environment-specific settings are loaded
 var contentRoot = builder.Environment.ContentRootPath;
@@ -15,6 +15,9 @@ builder.Services.AddOptions<LnMarketsOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// Add Web API services
+builder.Services.AddControllers();
+
 // Add HttpClient and logging
 builder.Services.AddHttpClient();
 builder.Services.AddLogging();
@@ -24,5 +27,11 @@ builder.Services.AddSingleton<ITradeManager, TradeManager>();
 builder.Services.AddSingleton<IPriceQueue, PriceQueue>();
 builder.Services.AddHostedService<LnMarketsBackgroundService>();
 
-var host = builder.Build();
-await host.RunAsync();
+var app = builder.Build();
+
+// Configure the HTTP request pipeline
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+await app.RunAsync();

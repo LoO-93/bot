@@ -10,7 +10,9 @@ public class TradeManager : ITradeManager
     private readonly IMarketplaceClient _client;
     private readonly IOptionsMonitor<LnMarketsOptions> _options;
     private readonly ILogger<TradeManager> _logger;
+    private readonly object _priceLock = new();
     private DateTime _lastConfigChange = DateTime.MinValue;
+    private decimal _latestPrice = 0;
 
     public TradeManager(IMarketplaceClient client, IOptionsMonitor<LnMarketsOptions> options, ILogger<TradeManager> logger)
     {
@@ -39,9 +41,96 @@ public class TradeManager : ITradeManager
         });
     }
 
+    public void UpdateBtcPriceInUsd(decimal price)
+    {
+        lock (_priceLock)
+        {
+            _latestPrice = price;
+        }
+    }
+
     public async Task HandlePriceUpdateAsync(LastPriceData data)
     {
         await HandlePriceUpdate(_client, _options.CurrentValue, data, _logger);
+    }
+
+    public async Task<bool> CreateManagedPositionAsync(long amountInSats)
+    {
+        try
+        {
+            var options = _options.CurrentValue;
+
+            _logger.LogInformation("Creating managed position with {Amount} sats", amountInSats);
+
+            // Get current user balance
+            var user = await _client.GetUser(options.Key, options.Passphrase, options.Secret);
+            if (user == null)
+            {
+                _logger.LogError("Failed to retrieve user information for managed position");
+                return false;
+            }
+
+            // if (user.balance < amountInSats)
+            // {
+            //     _logger.LogWarning("Insufficient balance for managed position: required {Amount} sats | available: {Available} sats", amountInSats, user.balance);
+            //     return false;
+            // }
+
+            // Calculate amounts: 50% for swap, 50% for trade
+            var halfAmountInSats = amountInSats / 2;
+
+            // Get current BTC price from stored latest price
+            decimal currentPrice;
+            lock (_priceLock)
+            {
+                currentPrice = _latestPrice;
+            }
+
+            if (currentPrice <= 0)
+            {
+                _logger.LogError("No current BTC price available for managed position");
+                return false;
+            }
+
+            // Convert swap amount to USD
+            var swapAmountInUsd = (int)Math.Floor((halfAmountInSats * currentPrice) / Constants.SatoshisPerBitcoin);
+            if (swapAmountInUsd > 0)
+            {
+                // Step 1: Swap half to synthetic USD
+                if (!await _client.SwapBtcInUsd(options.Key, options.Passphrase, options.Secret, swapAmountInUsd))
+                {
+                    _logger.LogError("Failed to swap {Amount}$ from BTC for managed position", swapAmountInUsd);
+                    return false;
+                }
+
+                _logger.LogInformation("Successfully swapped {Amount}$ from BTC to synthetic USD", swapAmountInUsd);
+            }
+
+            // Step 2: Create trade with remaining amount
+            var exitPrice = currentPrice + options.Takeprofit;
+
+            // Calculate trade quantity based on remaining sats
+            var tradeQuantity = (int)Math.Floor((halfAmountInSats * currentPrice) / (Constants.SatoshisPerBitcoin * options.Leverage));
+            if (tradeQuantity <= 0)
+            {
+                _logger.LogWarning("Calculated trade quantity is 0 or negative for managed position");
+                return false;
+            }
+
+            if (!await _client.CreateLimitBuyOrder(options.Key, options.Passphrase, options.Secret, currentPrice, exitPrice, options.Leverage, tradeQuantity))
+            {
+                _logger.LogError("Failed to create trade for managed position: [price: {Price}, exitPrice: {ExitPrice}, leverage: {Leverage}, quantity: {Quantity}]", currentPrice, exitPrice, options.Leverage, tradeQuantity);
+                return false;
+            }
+
+            _logger.LogInformation("Successfully created managed position: swapped {SwapAmount}$ to sUSD and created trade with {TradeQuantity} quantity at {Price}$", swapAmountInUsd, tradeQuantity, currentPrice);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating managed position");
+            return false;
+        }
     }
 
     private static async Task HandlePriceUpdate(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, ILogger? logger = null)

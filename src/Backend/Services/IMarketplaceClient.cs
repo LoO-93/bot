@@ -15,6 +15,8 @@ public interface IMarketplaceClient
 
     Task<bool> SwapUsdInBtc(string key, string passphrase, string secret, int amount);
 
+    Task<bool> SwapBtcInUsd(string key, string passphrase, string secret, int amount);
+
     Task<bool> AddMarginInSats(string key, string passphrase, string secret, string id, Satoshi amountInSats);
 
     Task<bool> Cancel(string key, string passphrase, string secret, string id);

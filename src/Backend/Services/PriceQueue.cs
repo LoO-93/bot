@@ -46,6 +46,9 @@ public class PriceQueue : IPriceQueue, IDisposable
                         continue;
                     }
 
+                    // Update the latest price in TradeManager
+                    _tradeManager.UpdateBtcPriceInUsd(data.LastPrice);
+
                     // Skip if too soon since last iteration (rate limiting)
                     if ((DateTime.UtcNow - lastIteration).TotalSeconds < _options.CurrentValue.MinCallIntervalSeconds)
                     {
