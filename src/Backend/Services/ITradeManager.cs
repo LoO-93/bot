@@ -4,6 +4,8 @@ namespace AutoBot.Services;
 
 public interface ITradeManager
 {
+    UserModel? GetUser();
+
     void UpdateBtcPriceInUsd(decimal price);
 
     Task HandlePriceUpdateAsync(LastPriceData data);

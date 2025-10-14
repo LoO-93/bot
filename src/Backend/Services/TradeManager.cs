@@ -11,8 +11,10 @@ public class TradeManager : ITradeManager
     private readonly IOptionsMonitor<LnMarketsOptions> _options;
     private readonly ILogger<TradeManager> _logger;
     private readonly object _priceLock = new();
+    private readonly object _userLock = new();
     private DateTime _lastConfigChange = DateTime.MinValue;
     private decimal _latestPrice = 0;
+    private UserModel? _latestUser = null;
 
     public TradeManager(IMarketplaceClient client, IOptionsMonitor<LnMarketsOptions> options, ILogger<TradeManager> logger)
     {
@@ -41,6 +43,14 @@ public class TradeManager : ITradeManager
         });
     }
 
+    public UserModel? GetUser()
+    {
+        lock (_userLock)
+        {
+            return _latestUser?.Clone();
+        }
+    }
+
     public void UpdateBtcPriceInUsd(decimal price)
     {
         lock (_priceLock)
@@ -51,7 +61,31 @@ public class TradeManager : ITradeManager
 
     public async Task HandlePriceUpdateAsync(LastPriceData data)
     {
-        await HandlePriceUpdate(_client, _options.CurrentValue, data, _logger);
+        _logger.LogInformation("Handling price update: {Price}$", data.LastPrice);
+
+        var user = await _client.GetUser(_options.CurrentValue.Key, _options.CurrentValue.Passphrase, _options.CurrentValue.Secret);
+        if (user == null)
+        {
+            return;
+        }
+
+        lock (_userLock)
+        {
+            _latestUser = user;
+        }
+
+        if (_options.CurrentValue.Pause)
+        {
+            return;
+        }
+
+        if (user.balance == 0)
+        {
+            return;
+        }
+
+        await ProcessMarginManagement(_client, _options.CurrentValue, data, user, _logger);
+        await ProcessTradeExecution(_client, _options.CurrentValue, data, user, _logger);
     }
 
     public async Task<bool> CreateManagedPositionAsync(long amountInSats)
@@ -131,25 +165,6 @@ public class TradeManager : ITradeManager
             _logger.LogError(ex, "Error creating managed position");
             return false;
         }
-    }
-
-    private static async Task HandlePriceUpdate(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, ILogger? logger = null)
-    {
-        logger?.LogInformation("Handling price update: {Price}$", data.LastPrice);
-
-        if (options.Pause)
-        {
-            return;
-        }
-
-        var user = await client.GetUser(options.Key, options.Passphrase, options.Secret);
-        if (user == null || user.balance == 0)
-        {
-            return;
-        }
-
-        await ProcessMarginManagement(client, options, data, user, logger);
-        await ProcessTradeExecution(client, options, data, user, logger);
     }
 
     private static async Task ProcessMarginManagement(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, UserModel user, ILogger? logger = null)

@@ -39,4 +39,29 @@ public class UserModel
     public bool webauthn_enabled { get; set; }
 
     public object? metrics { get; set; }
+
+    public UserModel Clone()
+    {
+        return new UserModel
+        {
+            uid = uid,
+            role = role,
+            balance = balance,
+            username = username,
+            synthetic_usd_balance = synthetic_usd_balance,
+            linkingpublickey = linkingpublickey,
+            show_leaderboard = show_leaderboard,
+            email = email,
+            email_confirmed = email_confirmed,
+            use_taproot_addresses = use_taproot_addresses,
+            account_type = account_type,
+            auto_withdraw_enabled = auto_withdraw_enabled,
+            auto_withdraw_lightning_address = auto_withdraw_lightning_address,
+            nostr_pubkey = nostr_pubkey,
+            fee_tier = fee_tier,
+            totp_enabled = totp_enabled,
+            webauthn_enabled = webauthn_enabled,
+            metrics = metrics,
+        };
+    }
 }

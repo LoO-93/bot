@@ -38,4 +38,30 @@ public class TradingController(ITradeManager _tradeManager, ILogger<TradingContr
             return StatusCode(500, ApiResponseFactory.CreateErrorResult("An unexpected error occurred"));
         }
     }
+
+    [HttpGet("user-balance")]
+    public ActionResult<ApiResponse<UserBalanceResponse>> GetUserBalance()
+    {
+        try
+        {
+            var user = _tradeManager.GetUser();
+            if (user == null)
+            {
+                return StatusCode(500, ApiResponseFactory.CreateErrorResult("Failed to retrieve user balance"));
+            }
+
+            var balance = new UserBalanceResponse
+            {
+                BalanceInSats = decimal.ToInt64(user.balance),
+                SyntheticUsdBalance = user.synthetic_usd_balance,
+            };
+
+            return Ok(ApiResponseFactory.CreateSuccessResult(balance, "User balance retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving user balance via API");
+            return StatusCode(500, ApiResponseFactory.CreateErrorResult("An unexpected error occurred"));
+        }
+    }
 }
