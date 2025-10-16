@@ -70,7 +70,7 @@ public sealed class PriceQueueTests
             var priceData = CreatePriceData(50000m);
 
             // Act
-            priceQueue.UpdatePrice(priceData);
+            priceQueue.PushPrice(priceData);
 
             // Assert
             await Task.Run(() => tradeManagerSignal.Task.Wait(TimeSpan.FromSeconds(1)));
@@ -101,10 +101,10 @@ public sealed class PriceQueueTests
             var priceData2 = CreatePriceData(50000m); // Same price
 
             // Act
-            priceQueue.UpdatePrice(priceData1);
+            priceQueue.PushPrice(priceData1);
             await Task.Run(() => firstCallSignal.Task.Wait(TimeSpan.FromSeconds(1))); // Wait for first processing
 
-            priceQueue.UpdatePrice(priceData2); // This should be skipped due to duplicate price
+            priceQueue.PushPrice(priceData2); // This should be skipped due to duplicate price
             // No need to wait - duplicate detection happens synchronously in the queue
         }
 
@@ -155,8 +155,8 @@ public sealed class PriceQueueTests
             var priceData2 = CreatePriceData(51000m); // Different price
 
             // Act
-            priceQueue.UpdatePrice(priceData1);
-            priceQueue.UpdatePrice(priceData2);
+            priceQueue.PushPrice(priceData1);
+            priceQueue.PushPrice(priceData2);
 
             await Task.Run(() => secondCallSignal.Task.Wait(TimeSpan.FromSeconds(2)));
         }
@@ -188,10 +188,10 @@ public sealed class PriceQueueTests
             var priceData2 = CreatePriceData(51000m); // Different price but within min interval
 
             // Act
-            priceQueue.UpdatePrice(priceData1);
+            priceQueue.PushPrice(priceData1);
             await Task.Run(() => firstCallSignal.Task.Wait(TimeSpan.FromSeconds(1)));
 
-            priceQueue.UpdatePrice(priceData2); // Should be skipped due to min call interval
+            priceQueue.PushPrice(priceData2); // Should be skipped due to min call interval
             // No need to wait - interval check happens synchronously
         }
 
@@ -207,7 +207,7 @@ public sealed class PriceQueueTests
             using var priceQueue = new PriceQueue(_mockTradeManager.Object, _mockOptionsMonitor.Object, _mockLogger.Object);
 
             // Act
-            priceQueue.UpdatePrice(default!);
+            priceQueue.PushPrice(default!);
             
             // No need to wait - null data is rejected immediately
         }
@@ -230,7 +230,7 @@ public sealed class PriceQueueTests
             };
 
             // Act
-            priceQueue.UpdatePrice(invalidTimeData);
+            priceQueue.PushPrice(invalidTimeData);
             
             // No need to wait - invalid timestamp is rejected immediately
         }
@@ -253,7 +253,7 @@ public sealed class PriceQueueTests
             };
 
             // Act
-            priceQueue.UpdatePrice(oldPriceData);
+            priceQueue.PushPrice(oldPriceData);
             
             // No need to wait - old timestamp is rejected immediately
         }
@@ -282,8 +282,8 @@ public sealed class PriceQueueTests
             var priceData2 = CreatePriceData(51000m);
 
             // Act
-            priceQueue.UpdatePrice(priceData1); // Should fail
-            priceQueue.UpdatePrice(priceData2); // Should succeed
+            priceQueue.PushPrice(priceData1); // Should fail
+            priceQueue.PushPrice(priceData2); // Should succeed
 
             await Task.Run(() => secondCallSignal.Task.Wait(TimeSpan.FromSeconds(1)));
         }

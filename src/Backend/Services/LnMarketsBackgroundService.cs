@@ -169,7 +169,7 @@ public class LnMarketsBackgroundService(IPriceQueue _priceQueue, IOptionsMonitor
                     }
 
                     _logger.LogInformation("Last Price update: {LastPrice}$", lastPriceData.LastPrice);
-                    _priceQueue.UpdatePrice(lastPriceData);
+                    _priceQueue.PushPrice(lastPriceData);
                     return;
                 default:
                     _logger.LogWarning("Received subscription data for unknown channel: {Channel}", subscription.Params.Channel);

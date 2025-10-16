@@ -74,7 +74,7 @@ public class PriceQueue : IPriceQueue, IDisposable
         });
     }
 
-    public void UpdatePrice(LastPriceData data)
+    public void PushPrice(LastPriceData data)
     {
         if (data == null)
         {

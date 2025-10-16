@@ -4,5 +4,5 @@ namespace AutoBot.Services;
 
 public interface IPriceQueue
 {
-    void UpdatePrice(LastPriceData data);
+    void PushPrice(LastPriceData data);
 }
