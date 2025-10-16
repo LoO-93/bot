@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AutoBot.Models;
 using AutoBot.Models.LnMarkets;
 using Microsoft.Extensions.Options;
@@ -50,21 +51,51 @@ public class TradeManager : ITradeManager
 
     private static async Task HandlePriceUpdate(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, ILogger? logger = null)
     {
-        logger?.LogInformation("Handling price update: {Price}$", data.LastPrice);
+        logger?.LogInformation("Handling price update {Price}$", data.LastPrice);
 
         if (options.Pause)
         {
             return;
         }
 
-        var user = await client.GetUser(options.Key, options.Passphrase, options.Secret);
-        if (user == null || user.balance == 0)
-        {
-            return;
-        }
+        Stopwatch? getUserSW = null;
+        Stopwatch? marginManagementSW = null;
+        Stopwatch? tradeExecutionSW = null;
+        var totalSW = Stopwatch.StartNew();
 
-        await ProcessMarginManagement(client, options, data, user, logger);
-        await ProcessTradeExecution(client, options, data, user, logger);
+        try
+        {
+            getUserSW = Stopwatch.StartNew();
+            var user = await client.GetUser(options.Key, options.Passphrase, options.Secret);
+            getUserSW.Stop();
+
+            if (user == null || user.balance == 0)
+            {
+                return;
+            }
+
+            marginManagementSW = Stopwatch.StartNew();
+            await ProcessMarginManagement(client, options, data, user, logger);
+            marginManagementSW.Stop();
+
+            tradeExecutionSW = Stopwatch.StartNew();
+            await ProcessTradeExecution(client, options, data, user, logger);
+            tradeExecutionSW.Stop();
+        }
+        finally
+        {
+            totalSW.Stop();
+            logger?.LogDebug(
+                "{Task} took {Time:F2}ms [{SubTask1} :: {Time:F2}ms | {SubTask2} :: {Time:F2}ms | {SubTask3} :: {Time:F2}ms]",
+                nameof(HandlePriceUpdate),
+                totalSW.Elapsed.TotalMilliseconds,
+                nameof(IMarketplaceClient.GetUser),
+                getUserSW?.Elapsed.TotalMilliseconds,
+                nameof(ProcessMarginManagement),
+                marginManagementSW?.Elapsed.TotalMilliseconds,
+                nameof(ProcessTradeExecution),
+                tradeExecutionSW?.Elapsed.TotalMilliseconds);
+        }
     }
 
     private static async Task ProcessMarginManagement(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, UserModel user, ILogger? logger = null)
