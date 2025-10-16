@@ -8,42 +8,13 @@ namespace AutoBot.Controllers;
 [Route("api/[controller]")]
 public class TradingController(ITradeManager _tradeManager, ILogger<TradingController> _logger) : ControllerBase
 {
-    [HttpPost("create-managed-position")]
-    public async Task<IActionResult> CreateManagedPosition([FromBody] CreateManagedPositionRequest request)
-    {
-        try
-        {
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage);
-                return BadRequest($"Validation failed: {string.Join(", ", errors)}");
-            }
-
-            _logger.LogInformation("API request to create managed position with {Amount} sats", request.AmountInSats);
-
-            var success = await _tradeManager.CreateManagedPositionAsync(request.AmountInSats);
-
-            if (!success)
-            {
-                return StatusCode(500, "Failed to create managed position");
-            }
-
-            return Ok($"Successfully created managed position with {request.AmountInSats} sats");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating managed position via API");
-            return StatusCode(500, "An unexpected error occurred");
-        }
-    }
-
     [HttpGet("user-balance")]
     public ActionResult<UserBalanceResponse> GetUserBalance()
     {
         try
         {
+            _logger.LogDebug("{Endpoint}", nameof(GetUserBalance));
+
             var user = _tradeManager.GetUser();
             if (user == null)
             {
@@ -60,7 +31,34 @@ public class TradingController(ITradeManager _tradeManager, ILogger<TradingContr
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving user balance via API");
+            _logger.LogError(ex, "{Endpoint}: ", nameof(GetUserBalance));
+            return StatusCode(500, "An unexpected error occurred");
+        }
+    }
+
+    [HttpPost("create-managed-position")]
+    public async Task<IActionResult> CreateManagedPosition([FromBody] CreateManagedPositionRequest request)
+    {
+        try
+        {
+            _logger.LogDebug("{Endpoint}: {Request}", nameof(CreateManagedPosition), request);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage);
+                return BadRequest($"Validation failed: {string.Join(", ", errors)}");
+            }
+
+            if (!await _tradeManager.CreateManagedPositionAsync(request.AmountInSats))
+            {
+                return StatusCode(500, "Failed to create managed position");
+            }
+
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "{Endpoint}: ", nameof(CreateManagedPosition));
             return StatusCode(500, "An unexpected error occurred");
         }
     }
