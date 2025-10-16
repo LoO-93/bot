@@ -85,8 +85,8 @@ public class TradeManager : ITradeManager
         finally
         {
             totalSW.Stop();
-            logger?.LogDebug(
-                "{Task} took {Time:F2}ms\n\t[user::{Time:F2}ms | margin::{Time:F2}ms | trade::{Time:F2}ms]",
+            logger?.LogTrace(
+                "{Task} took {Time:F2}ms\n[user::{Time:F2}ms | margin::{Time:F2}ms | trade::{Time:F2}ms]",
                 nameof(HandlePriceUpdate),
                 totalSW.Elapsed.TotalMilliseconds,
                 getUserSW?.Elapsed.TotalMilliseconds,
