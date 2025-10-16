@@ -86,14 +86,11 @@ public class TradeManager : ITradeManager
         {
             totalSW.Stop();
             logger?.LogDebug(
-                "{Task} took {Time:F2}ms [{SubTask1} :: {Time:F2}ms | {SubTask2} :: {Time:F2}ms | {SubTask3} :: {Time:F2}ms]",
+                "{Task} took {Time:F2}ms\n\t[user::{Time:F2}ms | margin::{Time:F2}ms | trade::{Time:F2}ms]",
                 nameof(HandlePriceUpdate),
                 totalSW.Elapsed.TotalMilliseconds,
-                nameof(IMarketplaceClient.GetUser),
                 getUserSW?.Elapsed.TotalMilliseconds,
-                nameof(ProcessMarginManagement),
                 marginManagementSW?.Elapsed.TotalMilliseconds,
-                nameof(ProcessTradeExecution),
                 tradeExecutionSW?.Elapsed.TotalMilliseconds);
         }
     }
