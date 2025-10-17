@@ -11,12 +11,15 @@ public class TradeManager : ITradeManager
     private readonly IMarketplaceClient _client;
     private readonly IOptionsMonitor<LnMarketsOptions> _options;
     private readonly ILogger<TradeManager> _logger;
+
     private readonly object _priceLock = new();
     private readonly object _userLock = new();
     private readonly object _tradesLock = new();
+
     private DateTime _lastConfigChange = DateTime.MinValue;
     private decimal _latestPrice = 0;
     private UserModel? _latestUser = null;
+    private IReadOnlyList<FuturesTradeModel>? _latestOpenTrades = null;
     private IReadOnlyList<FuturesTradeModel>? _latestRunningTrades = null;
 
     public TradeManager(IMarketplaceClient client, IOptionsMonitor<LnMarketsOptions> options, ILogger<TradeManager> logger)
@@ -58,6 +61,7 @@ public class TradeManager : ITradeManager
     {
         UserModel? user;
         decimal currentPrice;
+        IReadOnlyList<FuturesTradeModel>? openTrades;
         IReadOnlyList<FuturesTradeModel>? runningTrades;
 
         lock (_userLock)
@@ -72,6 +76,7 @@ public class TradeManager : ITradeManager
 
         lock (_tradesLock)
         {
+            openTrades = _latestOpenTrades;
             runningTrades = _latestRunningTrades;
         }
 
@@ -80,22 +85,27 @@ public class TradeManager : ITradeManager
             return null;
         }
 
+        openTrades ??= [];
         runningTrades ??= [];
 
-        // Calculate margins (convert to sats)
-        var totalMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.margin));
-        var totalMaintenanceMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.maintenance_margin));
+        var openMarginInSats = decimal.ToInt64(openTrades.Sum(t => t.margin));
+        var openMaintenanceMarginInSats = decimal.ToInt64(openTrades.Sum(t => t.maintenance_margin));
 
-        // Calculate quantities (in USD)
-        var totalQuantity = runningTrades.Sum(t => t.quantity);
+        var runningMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.margin));
+        var runningMaintenanceMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.maintenance_margin));
 
-        // Calculate total P&L (convert to sats)
+        var totalMarginInSats = runningMarginInSats + openMarginInSats;
+        var totalMaintenanceMarginInSats = runningMaintenanceMarginInSats + openMaintenanceMarginInSats;
+        var isolatedMarginInSats = totalMarginInSats + totalMaintenanceMarginInSats;
+
+        var openQuantity = openTrades.Sum(t => t.quantity);
+        var runningQuantity = runningTrades.Sum(t => t.quantity);
+        var totalQuantity = openQuantity + runningQuantity;
+
         var totalPLInSats = decimal.ToInt64(runningTrades.Sum(t => t.pl));
 
-        // Available balance (total - used in margins)
-        var availableBalance = Math.Max(0, decimal.ToInt64(user.balance) - totalMarginInSats - totalMaintenanceMarginInSats);
+        var availableBalance = Math.Max(0, decimal.ToInt64(user.balance) - isolatedMarginInSats);
 
-        // Total net value (balance + unrealized P&L)
         var totalNetValue = decimal.ToInt64(user.balance) + totalPLInSats;
 
         return new AccountDetails
@@ -104,20 +114,25 @@ public class TradeManager : ITradeManager
             Balances = new Balances
             {
                 sUSD = user.synthetic_usd_balance,
-                Cross = 0, // LN Markets uses isolated margin model
-                Isolated = totalMarginInSats,
+                Cross = 0, // LN Markets uses isolated margin model,
+                Isolated = isolatedMarginInSats,
                 Available = availableBalance,
             },
             TotalQuantity = new Quantities
             {
                 Total = totalQuantity,
                 Cross = 0, // LN Markets uses isolated margin model
-                Isolated = totalQuantity,
+                Open = openQuantity,
+                Running = runningQuantity,
             },
             Margins = new Margins
             {
-                Initial = totalMarginInSats,
-                Maintenance = totalMaintenanceMarginInSats,
+                Open = openMarginInSats,
+                OpenMaintenance = openMaintenanceMarginInSats,
+                Running = runningMarginInSats,
+                RunningMaintenance = runningMaintenanceMarginInSats,
+                Total = totalMarginInSats,
+                TotalMaintenance = totalMaintenanceMarginInSats,
             },
             ProfitLoss = totalPLInSats,
             CurrentPrice = currentPrice,
@@ -142,6 +157,7 @@ public class TradeManager : ITradeManager
             return;
         }
 
+        var openTrades = await _client.GetOpenTrades(_options.CurrentValue.Key, _options.CurrentValue.Passphrase, _options.CurrentValue.Secret);
         var runningTrades = await _client.GetRunningTrades(_options.CurrentValue.Key, _options.CurrentValue.Passphrase, _options.CurrentValue.Secret);
 
         lock (_userLock)
@@ -151,6 +167,7 @@ public class TradeManager : ITradeManager
 
         lock (_tradesLock)
         {
+            _latestOpenTrades = openTrades;
             _latestRunningTrades = runningTrades;
         }
 

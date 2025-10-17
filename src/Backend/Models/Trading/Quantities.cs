@@ -6,5 +6,7 @@ public readonly struct Quantities
 
     public required decimal Cross { get; init; }
 
-    public required decimal Isolated { get; init; }
+    public required decimal Open { get; init; }
+
+    public required decimal Running { get; init; }
 }
