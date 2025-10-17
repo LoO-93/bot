@@ -8,30 +8,34 @@ namespace AutoBot.Controllers;
 [Route("api/[controller]")]
 public class TradingController(ITradeManager _tradeManager, ILogger<TradingController> _logger) : ControllerBase
 {
-    [HttpGet("user-balance")]
-    public ActionResult<UserBalanceResponse> GetUserBalance()
+    [HttpGet("account-details")]
+    public ActionResult<AccountDetailsResponse> GetAccountDetails()
     {
         try
         {
-            _logger.LogDebug("{Endpoint}", nameof(GetUserBalance));
+            _logger.LogDebug("{Endpoint}", nameof(GetAccountDetails));
 
-            var user = _tradeManager.GetUser();
-            if (user == null)
+            var accountOverview = _tradeManager.GetAccountDetails();
+            if (accountOverview == null)
             {
-                return StatusCode(500, "Failed to retrieve user balance");
+                return StatusCode(500, "Failed to retrieve account details");
             }
 
-            var balance = new UserBalanceResponse
+            var details = new AccountDetailsResponse
             {
-                BalanceInSats = decimal.ToInt64(user.balance),
-                SyntheticUsdBalance = user.synthetic_usd_balance,
+                TotalNetValue = accountOverview.Value.TotalNetValue,
+                Balances = accountOverview.Value.Balances,
+                TotalQuantity = accountOverview.Value.TotalQuantity,
+                Margins = accountOverview.Value.Margins,
+                ProfitLoss = accountOverview.Value.ProfitLoss,
+                CurrentPrice = accountOverview.Value.CurrentPrice,
             };
 
-            return Ok(balance);
+            return Ok(details);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "{Endpoint}: ", nameof(GetUserBalance));
+            _logger.LogError(ex, "{Endpoint}: ", nameof(GetAccountDetails));
             return StatusCode(500, "An unexpected error occurred");
         }
     }

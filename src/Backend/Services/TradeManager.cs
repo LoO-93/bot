@@ -1,5 +1,6 @@
 using AutoBot.Models;
 using AutoBot.Models.LnMarkets;
+using AutoBot.Models.Trading;
 using AutoBot.Models.Units;
 using Microsoft.Extensions.Options;
 
@@ -12,9 +13,11 @@ public class TradeManager : ITradeManager
     private readonly ILogger<TradeManager> _logger;
     private readonly object _priceLock = new();
     private readonly object _userLock = new();
+    private readonly object _tradesLock = new();
     private DateTime _lastConfigChange = DateTime.MinValue;
     private decimal _latestPrice = 0;
     private UserModel? _latestUser = null;
+    private IReadOnlyList<FuturesTradeModel>? _latestRunningTrades = null;
 
     public TradeManager(IMarketplaceClient client, IOptionsMonitor<LnMarketsOptions> options, ILogger<TradeManager> logger)
     {
@@ -51,6 +54,76 @@ public class TradeManager : ITradeManager
         }
     }
 
+    public AccountDetails? GetAccountDetails()
+    {
+        UserModel? user;
+        decimal currentPrice;
+        IReadOnlyList<FuturesTradeModel>? runningTrades;
+
+        lock (_userLock)
+        {
+            user = _latestUser?.Clone();
+        }
+
+        lock (_priceLock)
+        {
+            currentPrice = _latestPrice;
+        }
+
+        lock (_tradesLock)
+        {
+            runningTrades = _latestRunningTrades;
+        }
+
+        if (user == null)
+        {
+            return null;
+        }
+
+        runningTrades ??= [];
+
+        // Calculate margins (convert to sats)
+        var totalMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.margin));
+        var totalMaintenanceMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.maintenance_margin));
+
+        // Calculate quantities (in USD)
+        var totalQuantity = runningTrades.Sum(t => t.quantity);
+
+        // Calculate total P&L (convert to sats)
+        var totalPLInSats = decimal.ToInt64(runningTrades.Sum(t => t.pl));
+
+        // Available balance (total - used in margins)
+        var availableBalance = Math.Max(0, decimal.ToInt64(user.balance) - totalMarginInSats - totalMaintenanceMarginInSats);
+
+        // Total net value (balance + unrealized P&L)
+        var totalNetValue = decimal.ToInt64(user.balance) + totalPLInSats;
+
+        return new AccountDetails
+        {
+            TotalNetValue = totalNetValue,
+            Balances = new Balances
+            {
+                sUSD = user.synthetic_usd_balance,
+                Cross = 0, // LN Markets uses isolated margin model
+                Isolated = totalMarginInSats,
+                Available = availableBalance,
+            },
+            TotalQuantity = new Quantities
+            {
+                Total = totalQuantity,
+                Cross = 0, // LN Markets uses isolated margin model
+                Isolated = totalQuantity,
+            },
+            Margins = new Margins
+            {
+                Initial = totalMarginInSats,
+                Maintenance = totalMaintenanceMarginInSats,
+            },
+            ProfitLoss = totalPLInSats,
+            CurrentPrice = currentPrice,
+        };
+    }
+
     public void UpdateBtcPriceInUsd(decimal price)
     {
         lock (_priceLock)
@@ -69,9 +142,16 @@ public class TradeManager : ITradeManager
             return;
         }
 
+        var runningTrades = await _client.GetRunningTrades(_options.CurrentValue.Key, _options.CurrentValue.Passphrase, _options.CurrentValue.Secret);
+
         lock (_userLock)
         {
             _latestUser = user;
+        }
+
+        lock (_tradesLock)
+        {
+            _latestRunningTrades = runningTrades;
         }
 
         if (_options.CurrentValue.Pause)
