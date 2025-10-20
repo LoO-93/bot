@@ -88,51 +88,56 @@ public class TradeManager : ITradeManager
         openTrades ??= [];
         runningTrades ??= [];
 
-        var openMarginInSats = decimal.ToInt64(openTrades.Sum(t => t.margin));
-        var openMaintenanceMarginInSats = decimal.ToInt64(openTrades.Sum(t => t.maintenance_margin));
+        var maintenanceMarginInSats = 0L;
+        var openMarginInSats = 0L;
+        var openQuantity = 0m;
+        foreach (var trade in openTrades)
+        {
+            maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
+            openMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
+            openQuantity += trade.quantity;
+        }
 
-        var runningMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.margin));
-        var runningMaintenanceMarginInSats = decimal.ToInt64(runningTrades.Sum(t => t.maintenance_margin));
+        var runningMarginInSats = 0L;
+        var runningQuantity = 0m;
+        var totalPLInSats = 0L;
+        foreach (var trade in runningTrades)
+        {
+            maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
+            runningMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
+            runningQuantity += trade.quantity;
+            totalPLInSats += decimal.ToInt64(trade.pl);
+        }
 
         var totalMarginInSats = runningMarginInSats + openMarginInSats;
-        var totalMaintenanceMarginInSats = runningMaintenanceMarginInSats + openMaintenanceMarginInSats;
-        var isolatedMarginInSats = totalMarginInSats + totalMaintenanceMarginInSats;
-
-        var openQuantity = openTrades.Sum(t => t.quantity);
-        var runningQuantity = runningTrades.Sum(t => t.quantity);
         var totalQuantity = openQuantity + runningQuantity;
-
-        var totalPLInSats = decimal.ToInt64(runningTrades.Sum(t => t.pl));
-
-        var availableBalance = Math.Max(0, decimal.ToInt64(user.balance) - isolatedMarginInSats);
-
-        var totalNetValue = decimal.ToInt64(user.balance) + totalPLInSats;
+        var availableBalance = decimal.ToInt64(user.balance);
+        var isolatedMarginInSats = totalMarginInSats + maintenanceMarginInSats + totalPLInSats;
+        var totalNetValue = availableBalance + isolatedMarginInSats;
 
         return new AccountDetails
         {
             TotalNetValue = totalNetValue,
             Balances = new Balances
             {
-                sUSD = user.synthetic_usd_balance,
                 Cross = 0, // LN Markets uses isolated margin model,
-                Isolated = isolatedMarginInSats,
+                sUSD = user.synthetic_usd_balance,
+                Isolated = decimal.ToInt64(isolatedMarginInSats),
                 Available = availableBalance,
             },
             TotalQuantity = new Quantities
             {
-                Total = totalQuantity,
                 Cross = 0, // LN Markets uses isolated margin model
                 Open = openQuantity,
                 Running = runningQuantity,
+                Total = totalQuantity,
             },
             Margins = new Margins
             {
                 Open = openMarginInSats,
-                OpenMaintenance = openMaintenanceMarginInSats,
                 Running = runningMarginInSats,
-                RunningMaintenance = runningMaintenanceMarginInSats,
+                Maintenance = maintenanceMarginInSats,
                 Total = totalMarginInSats,
-                TotalMaintenance = totalMaintenanceMarginInSats,
             },
             ProfitLoss = totalPLInSats,
             CurrentPrice = currentPrice,

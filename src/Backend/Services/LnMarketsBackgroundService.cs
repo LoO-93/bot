@@ -168,7 +168,7 @@ public class LnMarketsBackgroundService(IPriceQueue _priceQueue, IOptionsMonitor
                         return;
                     }
 
-                    _logger.LogInformation("Last Price update: {LastPrice}$", lastPriceData.LastPrice);
+                    _logger.LogDebug("Last Price update {LastPrice}$", lastPriceData.LastPrice);
                     _priceQueue.PushPrice(lastPriceData);
                     return;
                 default:
