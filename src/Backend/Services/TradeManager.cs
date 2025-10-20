@@ -90,47 +90,47 @@ public class TradeManager : ITradeManager
 
         var maintenanceMarginInSats = 0L;
         var openMarginInSats = 0L;
-        var openQuantity = 0m;
+        var openQuantityInUsd = 0m;
         foreach (var trade in openTrades)
         {
             maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
             openMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
-            openQuantity += trade.quantity;
+            openQuantityInUsd += trade.quantity;
         }
 
         var runningMarginInSats = 0L;
-        var runningQuantity = 0m;
+        var runningQuantityInSats = 0m;
         var totalPLInSats = 0L;
         foreach (var trade in runningTrades)
         {
             maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
             runningMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
-            runningQuantity += trade.quantity;
+            runningQuantityInSats += trade.quantity;
             totalPLInSats += decimal.ToInt64(trade.pl);
         }
 
-        var totalMarginInSats = runningMarginInSats + openMarginInSats;
-        var totalQuantity = openQuantity + runningQuantity;
-        var availableBalance = decimal.ToInt64(user.balance);
+        var totalMarginInSats = openMarginInSats + runningMarginInSats;
+        var totalQuantityInUsd = openQuantityInUsd + runningQuantityInSats;
+        var availableBalanceInSats = decimal.ToInt64(user.balance);
         var isolatedMarginInSats = totalMarginInSats + maintenanceMarginInSats + totalPLInSats;
-        var totalNetValue = availableBalance + isolatedMarginInSats;
+        var totalNetValueInSats = availableBalanceInSats + isolatedMarginInSats;
 
         return new AccountDetails
         {
-            TotalNetValue = totalNetValue,
+            TotalNetValue = totalNetValueInSats,
             Balances = new Balances
             {
                 Cross = 0, // LN Markets uses isolated margin model,
                 sUSD = user.synthetic_usd_balance,
                 Isolated = decimal.ToInt64(isolatedMarginInSats),
-                Available = availableBalance,
+                Available = availableBalanceInSats,
             },
             TotalQuantity = new Quantities
             {
                 Cross = 0, // LN Markets uses isolated margin model
-                Open = openQuantity,
-                Running = runningQuantity,
-                Total = totalQuantity,
+                Open = openQuantityInUsd,
+                Running = runningQuantityInSats,
+                Total = totalQuantityInUsd,
             },
             Margins = new Margins
             {
