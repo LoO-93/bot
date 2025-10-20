@@ -198,8 +198,7 @@ public class TradeManager : ITradeManager
 
             _logger.LogInformation("Creating managed position with {Amount} sats", amountInSats);
 
-            // Get current user balance
-            var user = await _client.GetUser(options.Key, options.Passphrase, options.Secret);
+            var user = GetUser();
             if (user == null)
             {
                 _logger.LogError("Failed to retrieve user information for managed position");
