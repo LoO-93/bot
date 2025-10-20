@@ -158,7 +158,7 @@ public class TradeManager : ITradeManager
         {
             if (data.LastPrice <= 0)
             {
-                logger?.LogWarning("Invalid last price: {Price}", data.LastPrice);
+                logger?.LogWarning("Invalid last price {Price}$", data.LastPrice);
                 return;
             }
 
@@ -173,11 +173,10 @@ public class TradeManager : ITradeManager
             var runningTrade = runningTrades.FirstOrDefault(x => GetQuantizedPrice(x.price.Value, options.Factor) == quantizedPriceInUsd);
             if (runningTrade != null)
             {
-                logger?.LogDebug("A running trade with the same price already exists ({Price}$)", quantizedPriceInUsd);
+                logger?.LogDebug("A running trade with the same quantized price already exists ({Price}$ -> {QuantizedPrice}$)", data.LastPrice, quantizedPriceInUsd);
                 return;
             }
 
-            // Only count running trade margins - open trades will be canceled and their margin freed
             Satoshi isolatedMarginInSats = runningTrades.Select(x => x.margin.Value + x.maintenance_margin.Value).Sum();
             Satoshi availableMarginInSats = user.balance - isolatedMarginInSats;
 
@@ -188,15 +187,6 @@ public class TradeManager : ITradeManager
                 return;
             }
 
-            var openTrades = await client.GetOpenTrades(options.Key, options.Passphrase, options.Secret);
-            var openTrade = openTrades.FirstOrDefault(x => GetQuantizedPrice(x.price.Value, options.Factor) == quantizedPriceInUsd);
-            if (openTrade != null)
-            {
-                logger?.LogDebug("An open trade with the same price already exists ({Price}$)", quantizedPriceInUsd);
-                return;
-            }
-
-            // Calculate exit price based on current market price (not quantized price) for market orders
             Dollar exitPriceInUsd;
             if (!options.TargetNetPLInSats.HasValue)
             {
@@ -228,21 +218,13 @@ public class TradeManager : ITradeManager
                 return;
             }
 
-            foreach (var oldTrade in openTrades)
-            {
-                if (!await client.Cancel(options.Key, options.Passphrase, options.Secret, oldTrade.id))
-                {
-                    logger?.LogWarning("Failed to cancel trade {TradeId}", oldTrade.id);
-                }
-            }
-
             if (!await client.CreateMarketBuyOrder(options.Key, options.Passphrase, options.Secret, exitPriceInUsd.Value, options.Leverage, options.Quantity))
             {
-                logger?.LogError("Failed to create limit buy order:\n\t[price: {Price}, takeprofit: {TakeProfit}, leverage: {Leverage}, quantity: {Quantity}]", quantizedPriceInUsd, exitPriceInUsd, options.Leverage, options.Quantity);
+                logger?.LogError("Failed to create limit buy order:\n\t[price: {Price}, takeprofit: {TakeProfit}, leverage: {Leverage}, quantity: {Quantity}]", data.LastPrice, exitPriceInUsd, options.Leverage, options.Quantity);
                 return;
             }
 
-            logger?.LogInformation("Successfully created limit buy order:\n\t[price: {Price}, takeprofit: {TakeProfit}, leverage: {Leverage}, quantity: {Quantity}]", quantizedPriceInUsd, exitPriceInUsd, options.Leverage, options.Quantity);
+            logger?.LogInformation("Successfully created limit buy order:\n\t[price: {Price}, takeprofit: {TakeProfit}, leverage: {Leverage}, quantity: {Quantity}]", data.LastPrice, exitPriceInUsd, options.Leverage, options.Quantity);
         }
         catch (Exception ex)
         {
