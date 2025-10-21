@@ -99,18 +99,18 @@ public class TradeManager : ITradeManager
         }
 
         var runningMarginInSats = 0L;
-        var runningQuantityInSats = 0m;
+        var runningQuantityInUsd = 0m;
         var totalPLInSats = 0L;
         foreach (var trade in runningTrades)
         {
             maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
             runningMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
-            runningQuantityInSats += trade.quantity;
+            runningQuantityInUsd += trade.quantity;
             totalPLInSats += decimal.ToInt64(trade.pl);
         }
 
         var totalMarginInSats = openMarginInSats + runningMarginInSats;
-        var totalQuantityInUsd = openQuantityInUsd + runningQuantityInSats;
+        var totalQuantityInUsd = openQuantityInUsd + runningQuantityInUsd;
         var availableBalanceInSats = decimal.ToInt64(user.balance);
         var isolatedMarginInSats = totalMarginInSats + maintenanceMarginInSats + totalPLInSats;
         var totalNetValueInSats = availableBalanceInSats + isolatedMarginInSats;
@@ -122,14 +122,14 @@ public class TradeManager : ITradeManager
             {
                 Cross = 0, // LN Markets uses isolated margin model,
                 sUSD = user.synthetic_usd_balance,
-                Isolated = decimal.ToInt64(isolatedMarginInSats),
+                Isolated = isolatedMarginInSats,
                 Available = availableBalanceInSats,
             },
             TotalQuantity = new Quantities
             {
                 Cross = 0, // LN Markets uses isolated margin model
                 Open = openQuantityInUsd,
-                Running = runningQuantityInSats,
+                Running = runningQuantityInUsd,
                 Total = totalQuantityInUsd,
             },
             Margins = new Margins
