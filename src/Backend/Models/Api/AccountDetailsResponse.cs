@@ -1,10 +1,11 @@
 using AutoBot.Models.Trading;
+using AutoBot.Models.Units;
 
 namespace AutoBot.Models.Api;
 
 public readonly struct AccountDetailsResponse
 {
-    public required long TotalNetValue { get; init; }
+    public required Satoshi TotalNetValue { get; init; }
 
     public required Balances Balances { get; init; }
 
@@ -12,7 +13,7 @@ public readonly struct AccountDetailsResponse
 
     public required Margins Margins { get; init; }
 
-    public required long ProfitLoss { get; init; }
+    public required Satoshi ProfitLoss { get; init; }
 
-    public required decimal CurrentPrice { get; init; }
+    public required Dollar CurrentPrice { get; init; }
 }

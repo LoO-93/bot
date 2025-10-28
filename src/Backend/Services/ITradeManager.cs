@@ -1,5 +1,6 @@
 using AutoBot.Models.LnMarkets;
 using AutoBot.Models.Trading;
+using AutoBot.Models.Units;
 
 namespace AutoBot.Services;
 
@@ -9,9 +10,9 @@ public interface ITradeManager
 
     AccountDetails? GetAccountDetails();
 
-    void UpdateBtcPriceInUsd(decimal price);
+    void UpdateBtcPriceInUsd(Dollar price);
 
     Task HandlePriceUpdateAsync(LastPriceData data);
 
-    Task<bool> CreateManagedPositionAsync(long amountInSats);
+    Task<bool> CreateManagedPositionAsync(Satoshi amountInSats);
 }

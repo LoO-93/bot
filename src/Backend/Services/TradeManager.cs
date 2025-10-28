@@ -17,7 +17,7 @@ public class TradeManager : ITradeManager
     private readonly object _tradesLock = new();
 
     private DateTime _lastConfigChange = DateTime.MinValue;
-    private decimal _latestPrice = 0;
+    private Dollar _latestPrice = 0;
     private UserModel? _latestUser = null;
     private IReadOnlyList<FuturesTradeModel>? _latestOpenTrades = null;
     private IReadOnlyList<FuturesTradeModel>? _latestRunningTrades = null;
@@ -60,7 +60,7 @@ public class TradeManager : ITradeManager
     public AccountDetails? GetAccountDetails()
     {
         UserModel? user;
-        decimal currentPrice;
+        Dollar currentPrice;
         IReadOnlyList<FuturesTradeModel>? openTrades;
         IReadOnlyList<FuturesTradeModel>? runningTrades;
 
@@ -88,32 +88,32 @@ public class TradeManager : ITradeManager
         openTrades ??= [];
         runningTrades ??= [];
 
-        var maintenanceMarginInSats = 0L;
-        var openMarginInSats = 0L;
-        var openQuantityInUsd = 0m;
+        Satoshi maintenanceMarginInSats = 0L;
+        Satoshi openMarginInSats = 0L;
+        Dollar openQuantityInUsd = 0m;
         foreach (var trade in openTrades)
         {
-            maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
-            openMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
+            maintenanceMarginInSats += trade.maintenance_margin;
+            openMarginInSats += trade.margin + trade.maintenance_margin;
             openQuantityInUsd += trade.quantity;
         }
 
-        var runningMarginInSats = 0L;
-        var runningQuantityInUsd = 0m;
-        var totalPLInSats = 0L;
+        Satoshi runningMarginInSats = 0L;
+        Dollar runningQuantityInUsd = 0m;
+        Satoshi totalPLInSats = 0L;
         foreach (var trade in runningTrades)
         {
-            maintenanceMarginInSats += decimal.ToInt64(trade.maintenance_margin);
-            runningMarginInSats += decimal.ToInt64(trade.margin + trade.maintenance_margin);
+            maintenanceMarginInSats += trade.maintenance_margin;
+            runningMarginInSats += trade.margin + trade.maintenance_margin;
             runningQuantityInUsd += trade.quantity;
-            totalPLInSats += decimal.ToInt64(trade.pl);
+            totalPLInSats += trade.pl;
         }
 
-        var totalMarginInSats = openMarginInSats + runningMarginInSats;
-        var totalQuantityInUsd = openQuantityInUsd + runningQuantityInUsd;
-        var availableBalanceInSats = decimal.ToInt64(user.balance);
-        var isolatedMarginInSats = totalMarginInSats + maintenanceMarginInSats + totalPLInSats;
-        var totalNetValueInSats = availableBalanceInSats + isolatedMarginInSats;
+        Satoshi totalMarginInSats = openMarginInSats + runningMarginInSats;
+        Dollar totalQuantityInUsd = openQuantityInUsd + runningQuantityInUsd;
+        Satoshi availableBalanceInSats = user.balance;
+        Satoshi isolatedMarginInSats = totalMarginInSats + maintenanceMarginInSats + totalPLInSats;
+        Satoshi totalNetValueInSats = availableBalanceInSats + isolatedMarginInSats;
 
         return new AccountDetails
         {
@@ -144,7 +144,7 @@ public class TradeManager : ITradeManager
         };
     }
 
-    public void UpdateBtcPriceInUsd(decimal price)
+    public void UpdateBtcPriceInUsd(Dollar price)
     {
         lock (_priceLock)
         {
@@ -190,7 +190,7 @@ public class TradeManager : ITradeManager
         await ProcessTradeExecution(_client, _options.CurrentValue, data, user, _logger);
     }
 
-    public async Task<bool> CreateManagedPositionAsync(long amountInSats)
+    public async Task<bool> CreateManagedPositionAsync(Satoshi amountInSats)
     {
         try
         {
@@ -212,10 +212,11 @@ public class TradeManager : ITradeManager
             // }
 
             // Calculate amounts: 50% for swap, 50% for trade
-            var halfAmountInSats = amountInSats / 2;
+            Satoshi swapAmountInSats = (long)Math.Ceiling(amountInSats.Value / 2.0);
+            Satoshi tradeAmountInSats = (long)Math.Floor(amountInSats.Value / 2.0);
 
             // Get current BTC price from stored latest price
-            decimal currentPrice;
+            Dollar currentPrice;
             lock (_priceLock)
             {
                 currentPrice = _latestPrice;
@@ -228,11 +229,11 @@ public class TradeManager : ITradeManager
             }
 
             // Convert swap amount to USD
-            var swapAmountInUsd = (int)Math.Floor((halfAmountInSats * currentPrice) / Constants.SatoshisPerBitcoin);
+            Dollar swapAmountInUsd = decimal.ToInt64(Math.Floor((swapAmountInSats.Value * currentPrice.Value) / Constants.SatoshisPerBitcoin.Value)); // TODO: verify calculation
             if (swapAmountInUsd > 0)
             {
                 // Step 1: Swap half to synthetic USD
-                if (!await _client.SwapBtcInUsd(options.Key, options.Passphrase, options.Secret, swapAmountInUsd))
+                if (!await _client.SwapBtcInUsd(options.Key, options.Passphrase, options.Secret, (int)swapAmountInUsd.Value))
                 {
                     _logger.LogError("Failed to swap {Amount}$ from BTC for managed position", swapAmountInUsd);
                     return false;
@@ -242,17 +243,17 @@ public class TradeManager : ITradeManager
             }
 
             // Step 2: Create trade with remaining amount
-            var exitPrice = currentPrice + options.Takeprofit;
+            Dollar exitPrice = currentPrice + options.Takeprofit;
 
             // Calculate trade quantity based on remaining sats
-            var tradeQuantity = (int)Math.Floor((halfAmountInSats * currentPrice) / (Constants.SatoshisPerBitcoin * options.Leverage));
+            Dollar tradeQuantity = Math.Floor((tradeAmountInSats.Value * currentPrice.Value) / (Constants.SatoshisPerBitcoin.Value * options.Leverage)); // TODO: verify calculation
             if (tradeQuantity <= 0)
             {
                 _logger.LogWarning("Calculated trade quantity is 0 or negative for managed position");
                 return false;
             }
 
-            if (!await _client.CreateLimitBuyOrder(options.Key, options.Passphrase, options.Secret, currentPrice, exitPrice, options.Leverage, tradeQuantity))
+            if (!await _client.CreateLimitBuyOrder(options.Key, options.Passphrase, options.Secret, currentPrice.Value, exitPrice.Value, options.Leverage, (int)tradeQuantity.Value))
             {
                 _logger.LogError("Failed to create trade for managed position: [price: {Price}, exitPrice: {ExitPrice}, leverage: {Leverage}, quantity: {Quantity}]", currentPrice, exitPrice, options.Leverage, tradeQuantity);
                 return false;
