@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoBot Trading Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 10px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .account-details {
+            display: grid;
+            gap: 5px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .detail-value {
+            color: #333;
+        }
+        .category-header {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #1976d2;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #1976d2;
+            padding-bottom: 3px;
+        }
+        .subcategory {
+            margin-left: 15px;
+            border-left: 3px solid #e3f2fd;
+            padding-left: 10px;
+        }
+        .refresh-btn {
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px auto;
+            display: block;
+        }
+        .refresh-btn:hover {
+            background-color: #1565c0;
+        }
+        .profit {
+            color: green;
+        }
+        .loss {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AutoBot Trading Dashboard</h1>
+        <button class="refresh-btn" onclick="loadAccountDetails()">Refresh Data</button>
+        
+        <div id="account-details" class="account-details">
+            <div class="detail-row">
+                <span class="detail-label">Total Net Value:</span>
+                <span class="detail-value"><span id="total-net-value"></span> sats</span>
+            </div>
+            
+            <div class="category-header">Balance</div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">sUSD:</span>
+                <span class="detail-value"><span id="balance-susd"></span> $</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Cross:</span>
+                <span class="detail-value"><span id="balance-cross"></span> sats</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Isolated:</span>
+                <span class="detail-value"><span id="balance-isolated"></span> sats</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Available:</span>
+                <span class="detail-value"><span id="balance-available"></span> sats</span>
+            </div>
+            
+            <div class="category-header">Quantity</div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Total:</span>
+                <span class="detail-value"><span id="quantity-total"></span> $</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Cross:</span>
+                <span class="detail-value"><span id="quantity-cross"></span> $</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Open:</span>
+                <span class="detail-value"><span id="quantity-open"></span> $</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Running:</span>
+                <span class="detail-value"><span id="quantity-running"></span> $</span>
+            </div>
+            
+            <div class="category-header">Margin</div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Open:</span>
+                <span class="detail-value"><span id="margin-open"></span> sats</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Running:</span>
+                <span class="detail-value"><span id="margin-running"></span> sats</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Maintenance:</span>
+                <span class="detail-value"><span id="margin-maintenance"></span> sats</span>
+            </div>
+            <div class="detail-row subcategory">
+                <span class="detail-label">Total:</span>
+                <span class="detail-value"><span id="margin-total"></span> sats</span>
+            </div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Profit/Loss:</span>
+                <span class="detail-value"><span id="profit-loss"></span> sats</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Current Price:</span>
+                <span class="detail-value"><span id="current-price"></span> $</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateAccountDetails(data) {
+            document.getElementById('total-net-value').textContent = data.totalNetValue;
+            document.getElementById('balance-susd').textContent = data.balances.sUSD;
+            document.getElementById('balance-cross').textContent = data.balances.cross;
+            document.getElementById('balance-isolated').textContent = data.balances.isolated;
+            document.getElementById('balance-available').textContent = data.balances.available;
+            document.getElementById('quantity-total').textContent = data.totalQuantity.total;
+            document.getElementById('quantity-cross').textContent = data.totalQuantity.cross;
+            document.getElementById('quantity-open').textContent = data.totalQuantity.open;
+            document.getElementById('quantity-running').textContent = data.totalQuantity.running;
+            document.getElementById('margin-open').textContent = data.margins.open;
+            document.getElementById('margin-running').textContent = data.margins.running;
+            document.getElementById('margin-maintenance').textContent = data.margins.maintenance;
+            document.getElementById('margin-total').textContent = data.margins.total;
+            document.getElementById('current-price').textContent = data.currentPrice;
+            
+            const profitLossElement = document.getElementById('profit-loss');
+            profitLossElement.textContent = data.profitLoss;
+            profitLossElement.className = data.profitLoss >= 0 ? 'profit' : 'loss';
+        }
+
+        async function loadAccountDetails() {
+            try {
+                const response = await fetch('/api/Trading/account-details');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                updateAccountDetails(data);
+            } catch (error) {
+                console.error('Error fetching account details:', error);
+            }
+        }
+
+        // Load data when page loads
+        window.addEventListener('load', loadAccountDetails);
+    </script>
+</body>
+</html>
