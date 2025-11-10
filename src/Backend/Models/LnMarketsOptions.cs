@@ -20,6 +20,10 @@ public class LnMarketsOptions
 
     public bool Pause { get; set; } = true;
 
+    public bool PauseMarginManagement { get; set; } = false;
+
+    public bool PauseTradeExecution { get; set; } = false;
+
     [Range(1, int.MaxValue)]
     public int Quantity { get; set; } = 1;
 

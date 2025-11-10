@@ -65,6 +65,11 @@ public class TradeManager : ITradeManager
 
     private static async Task ProcessMarginManagement(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, UserModel user, ILogger? logger = null)
     {
+        if (options.PauseMarginManagement)
+        {
+            return;
+        }
+
         try
         {
             var runningTrades = await client.GetRunningTrades(options.Key, options.Passphrase, options.Secret);
@@ -149,6 +154,11 @@ public class TradeManager : ITradeManager
 
     private static async Task ProcessTradeExecution(IMarketplaceClient client, LnMarketsOptions options, LastPriceData data, UserModel user, ILogger? logger = null)
     {
+        if (options.PauseTradeExecution)
+        {
+            return;
+        }
+
         try
         {
             if (data.LastPrice <= 0)
